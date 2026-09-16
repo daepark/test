@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import os
 
+import requests
 from mcp.server.mcpserver import MCPServer
 
 from .client import RusaAuthError, RusaClient, RusaParseError
+
+RusaError = (RusaAuthError, RusaParseError, requests.RequestException)
 
 mcp = MCPServer("rusa-rides")
 
@@ -42,7 +45,7 @@ def rusa_login() -> str:
     client = _get_client()
     try:
         client.login()
-    except RusaAuthError as exc:
+    except RusaError as exc:
         return f"Login failed: {exc}"
     return "Logged in to rusa.org."
 
@@ -55,9 +58,12 @@ def rusa_discover_member_links() -> list[dict[str, object]]:
     find the right URL to pass as rides_url to rusa_get_my_rides if auto-discovery
     picks the wrong page, or if rusa_get_my_rides reports it can't find one."""
     client = _get_client()
-    if not client.logged_in:
-        client.login()
-    return client.discover_member_links()
+    try:
+        if not client.logged_in:
+            client.login()
+        return client.discover_member_links()
+    except RusaError as exc:
+        return [{"error": str(exc)}]
 
 
 @mcp.tool()
@@ -70,7 +76,7 @@ def rusa_get_my_rides(rides_url: str | None = None) -> list[dict[str, str]]:
     client = _get_client()
     try:
         return client.get_my_rides(rides_url=rides_url)
-    except (RusaAuthError, RusaParseError) as exc:
+    except RusaError as exc:
         return [{"error": str(exc)}]
 
 
@@ -80,10 +86,13 @@ def rusa_debug_fetch(path_or_url: str) -> str:
     full URL) using the authenticated session and return its raw HTML. For diagnosing
     why auto-discovery or table parsing picked the wrong page -- not for normal use."""
     client = _get_client()
-    if not client.logged_in:
-        client.login()
-    resp = client.fetch(path_or_url)
-    return resp.text
+    try:
+        if not client.logged_in:
+            client.login()
+        resp = client.fetch(path_or_url)
+        return resp.text
+    except RusaError as exc:
+        return f"Fetch failed: {exc}"
 
 
 def main() -> None:
